@@ -1,0 +1,129 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MovieEngine</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,sans-serif;background:#0f0f1a;color:#eee;min-height:100vh}
+header{display:flex;align-items:center;justify-content:space-between;padding:1rem 2rem;border-bottom:1px solid #222;background:#0a0a15}
+h1{font-size:1.3rem;background:linear-gradient(135deg,#4f8ef7,#a259ff,#f759ab);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+main{max-width:1100px;margin:2rem auto;padding:0 1rem}
+.tabs{display:flex;gap:.5rem;margin-bottom:1rem}
+.tab{padding:.5rem 1rem;border-radius:99px;border:1px solid #333;background:#16162a;cursor:pointer;color:#aaa;font-size:.9rem}
+.tab.active{background:#4f8ef7;border-color:#4f8ef7;color:#fff}
+.search-box{display:flex;gap:.5rem;margin-bottom:1.5rem}
+input[type=text]{flex:1;padding:.75rem 1rem;border:1px solid #2a2a40;border-radius:10px;background:#16162a;color:#fff;font-size:1rem}
+input:focus{border-color:#4f8ef7;outline:none}
+button{padding:.75rem 1.5rem;border:none;border-radius:10px;background:linear-gradient(135deg,#4f8ef7,#a259ff);color:#fff;font-size:1rem;cursor:pointer;font-weight:600}
+button:disabled{opacity:.5;cursor:not-allowed}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:1rem}
+.card{background:#16162a;border:1px solid #222;border-radius:12px;overflow:hidden;cursor:pointer;transition:transform .2s}
+.card:hover{transform:translateY(-3px)}
+.card .poster{height:220px;background:#222;display:flex;align-items:center;justify-content:center;font-size:2.5rem;position:relative}
+.card .poster img{width:100%;height:100%;object-fit:cover}
+.card .info{padding:.6rem}
+.card .title{font-size:.8rem;font-weight:600;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.card .meta{font-size:.7rem;color:#666;margin-top:.2rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.badge{position:absolute;top:6px;left:6px;font-size:.65rem;font-weight:700;padding:.15rem .5rem;border-radius:99px}
+.b-blue{background:rgba(79,142,247,.85);color:#fff}
+.b-pink{background:rgba(247,89,171,.85);color:#fff}
+.loading{text-align:center;padding:2rem;color:#aaa}
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:100;align-items:center;justify-content:center}
+.modal.open{display:flex}
+.modal>div{background:#16162a;border:1px solid #333;border-radius:16px;max-width:600px;width:95%;max-height:85vh;overflow-y:auto;padding:1.5rem}
+.modal h2{margin-bottom:.5rem}
+.modal .close{margin-top:1rem;padding:.5rem 1rem;background:#333;border-radius:8px;cursor:pointer;border:none;color:#fff;width:100%}
+.modal .overview{color:#999;font-size:.85rem;margin:.5rem 0;line-height:1.5}
+.modal .meta-row{display:flex;gap:.8rem;flex-wrap:wrap;margin:.4rem 0;font-size:.8rem;color:#aaa}
+.modal .meta-row span{background:#1e1e33;border:1px solid #333;padding:.15rem .5rem;border-radius:4px}
+.modal .cast{font-size:.78rem;color:#888;margin:.3rem 0;padding:.3rem 0;border-bottom:1px solid #222}
+.dl-item{display:flex;justify-content:space-between;align-items:center;gap:.5rem;padding:.5rem 0;border-bottom:1px solid #222;flex-wrap:wrap}
+.dl-item a{color:#4f8ef7;text-decoration:none;font-size:.85rem;word-break:break-all;flex:1}
+.dl-item .q{font-size:.75rem;padding:.1rem .4rem;border-radius:4px;background:#1e1e33;border:1px solid #333;color:#ccc}
+.modal .tmdb-link{font-size:.75rem;color:#4f8ef7;margin-bottom:.5rem;display:inline-block}
+.empty{text-align:center;padding:2rem;color:#555}
+.star{color:#fbbf24}
+</style></head><body>
+<header><h1>🎬 MovieEngine</h1></header>
+<main>
+<div class="tabs">
+  <button class="tab active" onclick="setType('movie',this)">🎬 Movies</button>
+  <button class="tab" onclick="setType('anime',this)">🎌 Anime</button>
+</div>
+<div class="search-box">
+  <input type="text" id="q" placeholder="Search movies/anime…" onkeydown="if(event.key==='Enter')doSearch()">
+  <button id="btn" onclick="doSearch()">Search</button>
+</div>
+<div class="loading" id="loading" style="display:none">⏳ Loading…</div>
+<div class="grid" id="grid"></div>
+<div class="empty" id="empty"></div>
+</main>
+<div class="modal" id="modal" onclick="if(event.target===this)closeModal()">
+<div>
+  <h2 id="modal-title"></h2>
+  <a id="modal-tmdb" class="tmdb-link" target="_blank" style="display:none"></a>
+  <div id="modal-meta" style="margin-bottom:.6rem;font-size:.8rem;color:#aaa"></div>
+  <div id="modal-dls"></div>
+  <button class="close" onclick="closeModal()">Close</button>
+</div>
+</div>
+<script>
+let curType='movie',curResults=[];
+function setType(t,el){curType=t;el.classList.add('active');document.querySelectorAll('.tab').forEach(x=>{if(x!==el)x.classList.remove('active')});document.getElementById('grid').innerHTML='';document.getElementById('empty').innerHTML='';}
+async function doSearch(){
+  const q=document.getElementById('q').value.trim();if(!q)return;
+  document.getElementById('loading').style.display='block';document.getElementById('grid').innerHTML='';document.getElementById('empty').innerHTML='';curResults=[];
+  try{
+    const r=await fetch('/search?q='+encodeURIComponent(q)+'&type='+curType);
+    const data=await r.json();
+    const enriched=await Promise.all(data.map(async item=>{
+      try{
+        const tr=await fetch('/tmdb?q='+encodeURIComponent(item.title));
+        item.tmdb=await tr.json();
+      }catch(e){item.tmdb=null}
+      return item;
+    }));
+    curResults=enriched;render(enriched);
+  }catch(e){console.error(e);document.getElementById('empty').innerHTML='Error fetching results.'}
+  finally{document.getElementById('loading').style.display='none';}
+}
+function render(data){
+  if(!data.length){document.getElementById('empty').innerHTML='No results found.';return;}
+  const g=document.getElementById('grid');
+  data.forEach((item,i)=>{
+    const card=document.createElement('div');card.className='card';card.onclick=()=>openDetails(i);
+    const cls=item.source==='BollyFlix'?'b-blue':'b-pink';
+    const poster=item.tmdb&&item.tmdb.poster ? item.tmdb.poster : (item.img||'');
+    const yr=item.tmdb&&item.tmdb.year?' ('+item.tmdb.year+')':'';
+    card.innerHTML='<div class="poster">'+(poster?'<img src="'+poster+'" loading="lazy" onerror="this.style.display=`none`">':'🎬')+'<span class="badge '+cls+'">'+item.source+'</span></div><div class="info"><div class="title">'+item.title+'</div>'+(yr||item.meta?'<div class="meta">'+(yr||'')+(item.meta?(yr?' • ':''):'')+item.meta.substring(0,30)+'</div>':'')+'</div>';
+    g.appendChild(card);
+  });
+}
+async function openDetails(i){
+  const item=curResults[i];
+  try{
+    const r=await fetch('/details?source='+item.source+'&url='+encodeURIComponent(item.href));
+    const data=await r.json();
+    document.getElementById('modal-title').innerHTML='<span class="'+(item.source==='BollyFlix'?'b-blue':'b-pink')+'" style="padding:.2rem .6rem;border-radius:6px">'+item.source+'</span> '+data.title+' '+(item.tmdb&&item.tmdb.year?'<small style="color:#777">('+item.tmdb.year+')</small>':'');
+    let metaHtml='';
+    if(item.tmdb){
+      if(item.tmdb.id) document.getElementById('modal-tmdb').href='https://www.themoviedb.org/movie/'+item.tmdb.id, document.getElementById('modal-tmdb').style.display='inline-block';
+      const rating=item.tmdb.rating ? '<span class="star">★</span> '+item.tmdb.rating.toFixed(1) : '';
+      metaHtml=rating;
+      if(item.tmdb.genres&&item.tmdb.genres.length) metaHtml+='<div style="margin-top:.3rem">'+item.tmdb.genres.map(g=>'<span style="background:#1e1e33;border:1px solid #333;padding:.1rem .4rem;border-radius:4px;font-size:.75rem;margin-right:.3rem;margin-top:.2rem;display:inline-block">'+g+'</span>').join('')+'</div>';
+      if(item.tmdb.overview) metaHtml+='<div class="overview" style="margin-top:.4rem">'+item.tmdb.overview+'</div>';
+      if(item.tmdb.cast&&item.tmdb.cast.length) metaHtml+='<div class="cast">🎭 '+item.tmdb.cast.join(', ')+'</div>';
+    }
+    document.getElementById('modal-meta').innerHTML=metaHtml;
+    const dls=document.getElementById('modal-dls');
+    if(!data.downloads||!data.downloads.length){dls.innerHTML='<div class="empty">No download links found.</div>';}
+    else{dls.innerHTML='';data.downloads.forEach(function(d){
+      const row=document.createElement('div');row.className='dl-item';
+      row.innerHTML='<a href="'+d.url+'" target="_blank" rel="noopener">'+d.name+'</a><span class="q">'+(d.quality||'N/A')+(d.size!='N/A'?' · '+d.size:'')+'</span>';
+      dls.appendChild(row);
+    })}
+    document.getElementById('modal').classList.add('open');
+  }catch(e){console.error(e);}
+}
+function closeModal(){document.getElementById('modal').classList.remove('open');}
+</script>
+</body></html>
